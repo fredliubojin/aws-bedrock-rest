@@ -1,0 +1,16 @@
+{
+  "SourceConfiguration": {
+    "AuthenticationConfiguration": {
+      "AccessRoleArn": "arn:aws:iam::720393828998:role/AppRunnerServiceRoleForECRAccess"
+    },
+    "ImageRepository": {
+      "ImageIdentifier": "720393828998.dkr.ecr.us-west-2.amazonaws.com/my-fastapi-app:latest",
+      "ImageRepositoryType": "ECR"
+    }
+  },
+  "InstanceConfiguration": {
+    "Cpu": "1 vCPU",
+    "Memory": "2 GB"
+  },
+  "ServiceName": "my-fastapi-app"
+}
