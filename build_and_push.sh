@@ -9,7 +9,7 @@ fi
 # Set the required variables from the environment
 account_id=${AWS_ACCOUNT_ID}
 region=${AWS_REGION}
-service_name=my-fastapi-app
+service_name=bedrock-rest
 
 # Set ECR repository
 ECR_REPOSITORY=$account_id.dkr.ecr.$region.amazonaws.com/$service_name

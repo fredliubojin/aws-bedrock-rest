@@ -3,7 +3,7 @@
 To store your container images, create an Amazon ECR repository:
 
 ```bash
-aws ecr create-repository --repository-name my-fastapi-app
+aws ecr create-repository --repository-name bedrock-rest
 ```
 
 Note down the `repositoryUri` from the output.
@@ -14,16 +14,16 @@ Build and push the Docker image to the ECR repository:
 
 ```bash
 # Replace <account_id> with your AWS account ID and <region> with your desired AWS region
-ECR_REPOSITORY=<account_id>.dkr.ecr.<region>.amazonaws.com/my-fastapi-app
+ECR_REPOSITORY=<account_id>.dkr.ecr.<region>.amazonaws.com/bedrock-rest
 
 # Login to ECR
 aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin $ECR_REPOSITORY
 
 # Build the Docker image
-docker build -t my-fastapi-app .
+docker build -t bedrock-rest .
 
 # Tag the image with the ECR repository URI
-docker tag my-fastapi-app:latest $ECR_REPOSITORY:latest
+docker tag bedrock-rest:latest $ECR_REPOSITORY:latest
 
 # Push the image to ECR
 docker push $ECR_REPOSITORY:latest
@@ -40,7 +40,7 @@ Create a JSON file named `apprunner-service.json` with the following content:
       "AccessRoleArn": "arn:aws:iam::<account_id>:role/service-role/AppRunnerServiceRoleForECRAccess"
     },
     "ImageRepository": {
-      "ImageIdentifier": "<account_id>.dkr.ecr.<region>.amazonaws.com/my-fastapi-app:latest",
+      "ImageIdentifier": "<account_id>.dkr.ecr.<region>.amazonaws.com/bedrock-rest:latest",
       "ImageRepositoryType": "ECR"
     }
   },
@@ -48,7 +48,7 @@ Create a JSON file named `apprunner-service.json` with the following content:
     "Cpu": "1024",
     "Memory": "2"
   },
-  "ServiceName": "my-fastapi-app"
+  "ServiceName": "bedrock-rest"
 }
 ```
 

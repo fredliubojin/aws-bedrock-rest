@@ -18,3 +18,4 @@ var/
 __pycache__/
 # Serverless directories
 .serverless
+*.json
