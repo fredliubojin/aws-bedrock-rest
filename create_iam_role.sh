@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Ensure AWS_ACCOUNT_ID and AWS_REGION are set
-if [ -z "$AWS_ACCOUNT_ID" ] || [ -z "$AWS_REGION" ]; then
-  echo "Please set the environment variables AWS_ACCOUNT_ID and AWS_REGION before running this script."
+if [ -z "$AWS_ACCOUNT_ID" ] || [ -z "$AWS_REGION" ] || [ -z "$ADMIN_API_KEY" ]; then
+  echo "Please set the environment variables AWS_ACCOUNT_ID, AWS_REGION and ADMIN_API_KEY before running this script."
   exit 1
 fi
 
@@ -53,6 +53,8 @@ cat > apprunner-beckrock-policy.json << EOL
 }
 EOL
 
+# create apprunner-bedrock-secret-manager.json to allow read and write permission to secret manager to all secrets
+
 # Create the IAM apprunner-beckrock-policy
 aws iam create-policy --policy-name AppRunnerServiceRoleExecutionPolicy --policy-document file://apprunner-beckrock-policy.json
 
@@ -64,6 +66,7 @@ aws iam create-role --role-name AppRunnerServiceRoleForExecution --assume-role-p
 aws iam attach-role-policy --role-name AppRunnerServiceRoleForECRAccess --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
 aws iam attach-role-policy --role-name AppRunnerServiceRoleForECRAccess --policy-arn arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess
 aws iam attach-role-policy --role-name AppRunnerServiceRoleForExecution --policy-arn arn:aws:iam::${AWS_ACCOUNT_ID}:policy/AppRunnerServiceRoleExecutionPolicy
+aws iam attach-role-policy --role-name AppRunnerServiceRoleForExecution --policy-arn arn:aws:iam::aws:policy/SecretsManagerReadWrite
 
 # Get the ARN of the created role
 ROLE_ARN=$(aws iam get-role --role-name AppRunnerServiceRoleForECRAccess --query 'Role.Arn' --output text)
@@ -78,7 +81,13 @@ cat > apprunner-service.json << EOL
     },
     "ImageRepository": {
       "ImageIdentifier": "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/bedrock-rest:latest",
-      "ImageRepositoryType": "ECR"
+      "ImageRepositoryType": "ECR",
+      "ImageConfiguration": {
+        "Port": "8080",
+        "RuntimeEnvironmentVariables": {
+            "ADMIN_API_KEY": "${ADMIN_API_KEY}"
+        }
+      }
     }
   },
   "InstanceConfiguration": {
