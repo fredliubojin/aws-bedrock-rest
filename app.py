@@ -91,7 +91,6 @@ api_keys = load_api_keys()
 
 # Dependency to check for valid API key
 async def get_api_key(api_key_header: str = Security(api_key_header)):
-    logger.info(f"{api_key_header=}")
     if api_key_header not in api_keys:
         raise HTTPException(status_code=403, detail="Invalid API key")
     return api_key_header
@@ -129,7 +128,6 @@ def read_root():
 @app.post("/v1/complete")
 async def complete(request: Request, api_key: str = Depends(get_api_key)):
     body = await request.json()
-    logger.info(f"Received data: {body}")
     if not _is_valid_json_body(body, ["prompt", "max_tokens_to_sample", "temperature"]):
         logger.error(f'Invalid JSON body: {json.loads(body)}')
         return _create_response(400, f'Invalid JSON body: {body=}')
