@@ -48,6 +48,11 @@ cat > apprunner-beckrock-policy.json << EOL
       "Effect": "Allow",
       "Action": "bedrock:InvokeModel",
       "Resource": "arn:aws:bedrock:${AWS_REGION}::foundation-model/anthropic.claude-v2"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "bedrock:InvokeModelWithResponseStream",
+      "Resource": "arn:aws:bedrock:${AWS_REGION}::foundation-model/anthropic.claude-v2"
     }
   ]
 }

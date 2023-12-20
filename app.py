@@ -107,7 +107,7 @@ async def list_api_keys(admin_api_key: str = Depends(get_admin_api_key)):
 
 @app.post("/keys")
 async def create_api_key(admin_api_key: str = Depends(get_admin_api_key)):
-    new_key = f"sk-{uuid4()}"
+    new_key = f"bedrock-sk-{uuid4()}"
     api_keys.append(new_key)
     save_api_keys()
     return {"api_key": new_key}
@@ -130,15 +130,16 @@ async def complete(request: Request, api_key: str = Depends(get_api_key)):
     body = await request.json()
     if not _is_valid_json_body(body, ["prompt", "max_tokens_to_sample", "temperature"]):
         logger.error(f'Invalid JSON body: {json.loads(body)}')
-        return _create_response(400, f'Invalid JSON body: {body=}')
+        raise HTTPException(status_code=400, detail=f'Invalid JSON body: {body=}')
 
     body_obj, stream_enabled = _process_body(body)
-    response = _invoke_model(body_obj)
 
     if stream_enabled:
-        response = f'event: completion\ndata:{response}\n\n'
-
-    return PlainTextResponse(response)
+        # Create a StreamingResponse using the _invoke_model asynchronous generator
+        return StreamingResponse(_invoke_model_stream(body_obj), media_type="text/event-stream")
+    else:
+        response = _invoke_model(body_obj)
+        return PlainTextResponse(response)
 
 def _is_valid_json_body(data, fields):
     return all(field in data for field in fields)
@@ -149,6 +150,12 @@ def _process_body(body_obj):
     body_obj['anthropic_version'] = 'bedrock-2023-05-31'
 
     return json.dumps(body_obj), stream_enabled
+
+async def _invoke_model_stream(body: dict):
+    response = bedrock.invoke_model_with_response_stream(body=body, modelId=modelId, accept=accept, contentType=contentType)
+    for event in response.get('body'):
+        chunk = json.loads(event["chunk"]["bytes"])
+        yield f'event: completion\ndata:{json.dumps(chunk)}\n\n'
 
 def _invoke_model(body):
     response = bedrock.invoke_model(body=body, modelId=modelId, accept=accept, contentType=contentType)
