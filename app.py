@@ -19,9 +19,16 @@ app = FastAPI()
 handler = Mangum(app)
 
 bedrock = boto3.client(service_name='bedrock-runtime')
-modelId = 'anthropic.claude-v2'
 accept = 'application/json'
 contentType = 'application/json'
+ANTHROPIC_TO_BEDROCK_MODEL_MAP = {
+    'claude-instant-1.2': 'anthropic.claude-instant-v1',
+    'claude-2.0': 'anthropic.claude-v2',
+    'claude-2.1': 'anthropic.claude-v2:1',
+    #'claude-3-opus-20240229': 'anthropic.claude-3-opus-20240229-v1:0', # opus is not supported on bedrock yet
+    'claude-3-sonnet-20240229': 'anthropic.claude-3-sonnet-20240229-v1:0',
+    'claude-3-haiku-20240307': 'anthropic.claude-3-haiku-20240307-v1:0',
+}
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -128,44 +135,58 @@ def read_root():
 @app.post("/v1/complete")
 async def complete(request: Request, api_key: str = Depends(get_api_key)):
     body = await request.json()
-    if not _is_valid_json_body(body, ["prompt", "max_tokens_to_sample", "temperature"]):
+    if not _is_valid_json_body(body, ["prompt", "max_tokens_to_sample"]):
         logger.error(f'Invalid JSON body: {json.loads(body)}')
         raise HTTPException(status_code=400, detail=f'Invalid JSON body: {body=}')
 
-    body_obj, stream_enabled = _process_body(body)
+    model, body_obj, stream_enabled = _process_body(body)
 
     if stream_enabled:
         # Create a StreamingResponse using the _invoke_model asynchronous generator
-        return StreamingResponse(_invoke_model_stream(body_obj), media_type="text/event-stream")
+        return StreamingResponse(_invoke_model_stream(body_obj, model), media_type="text/event-stream")
     else:
-        response = _invoke_model(body_obj)
+        response = _invoke_model(body_obj, model)
+        return PlainTextResponse(response)
+
+
+@app.post("/v1/messages")
+async def complete(request: Request, api_key: str = Depends(get_api_key)):
+    body = await request.json()
+    if not _is_valid_json_body(body, ["model", "messages", "max_tokens"]):
+        logger.error(f'Invalid JSON body: {json.loads(body)}')
+        raise HTTPException(status_code=400, detail=f'Invalid JSON body: {body=}')
+
+    model, body_obj, stream_enabled = _process_body(body)
+
+    if stream_enabled:
+        # Create a StreamingResponse using the _invoke_model asynchronous generator
+        return StreamingResponse(_invoke_model_stream(body_obj, model), media_type="text/event-stream")
+    else:
+        response = _invoke_model(body_obj, model)
         return PlainTextResponse(response)
 
 def _is_valid_json_body(data, fields):
     return all(field in data for field in fields)
 
 def _process_body(body_obj):
-    body_obj.pop("model", None)
+    anthropic_model = body_obj.pop("model", None)
+    # Translate to bedrock model
+    bedrock_model = ANTHROPIC_TO_BEDROCK_MODEL_MAP.get(anthropic_model, None)
     stream_enabled = body_obj.pop("stream", False)
     body_obj['anthropic_version'] = 'bedrock-2023-05-31'
 
-    return json.dumps(body_obj), stream_enabled
+    return bedrock_model, json.dumps(body_obj), stream_enabled
 
-async def _invoke_model_stream(body: dict):
-    response = bedrock.invoke_model_with_response_stream(body=body, modelId=modelId, accept=accept, contentType=contentType)
+async def _invoke_model_stream(body: dict, model):
+    response = bedrock.invoke_model_with_response_stream(body=body, modelId=model, accept=accept, contentType=contentType)
     for event in response.get('body'):
         chunk = json.loads(event["chunk"]["bytes"])
-        yield f'event: completion\ndata:{json.dumps(chunk)}\n\n'
+        event_type = chunk.get("type", "completion")
+        yield f'event: {event_type}\ndata:{json.dumps(chunk)}\n\n'
 
-def _invoke_model(body):
-    response = bedrock.invoke_model(body=body, modelId=modelId, accept=accept, contentType=contentType)
+def _invoke_model(body, model):
+    response = bedrock.invoke_model(body=body, modelId=model, accept=accept, contentType=contentType)
     return response.get('body').read().decode('utf-8')
-
-def _create_response(status_code, body):
-    return {
-        'statusCode': status_code,
-        'body': body
-    }
 
 async def event_stream():
     count = 0
