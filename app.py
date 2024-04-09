@@ -179,10 +179,21 @@ def _process_body(body_obj):
 
 async def _invoke_model_stream(body: dict, model):
     response = bedrock.invoke_model_with_response_stream(body=body, modelId=model, accept=accept, contentType=contentType)
-    for event in response.get('body'):
-        chunk = json.loads(event["chunk"]["bytes"])
-        event_type = chunk.get("type", "completion")
-        yield f'event: {event_type}\ndata:{json.dumps(chunk)}\n\n'
+    event_stream = response.get('body')
+
+    async def stream_events(event_stream):
+        for event in event_stream:
+            chunk = json.loads(event["chunk"]["bytes"])
+            event_type = chunk.get("type", "completion")
+            yield f'event: {event_type}\ndata:{json.dumps(chunk)}\n\n'
+
+    async_iter = stream_events(event_stream)
+    async for event in async_iter:
+        yield event
+    # for event in response.get('body'):
+    #     chunk = json.loads(event["chunk"]["bytes"])
+    #     event_type = chunk.get("type", "completion")
+    #     yield f'event: {event_type}\ndata:{json.dumps(chunk)}\n\n'
 
 def _invoke_model(body, model):
     response = bedrock.invoke_model(body=body, modelId=model, accept=accept, contentType=contentType)
