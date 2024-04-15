@@ -1,4 +1,4 @@
-import os
+import os, random
 from fastapi import FastAPI
 from fastapi import HTTPException, Depends
 from fastapi.security import APIKeyHeader
@@ -13,6 +13,7 @@ from botocore.exceptions import ClientError
 import botocore
 from uuid import uuid4
 from typing import List
+from fastapi.concurrency import run_in_threadpool
 
 
 app = FastAPI()
@@ -65,7 +66,7 @@ def load_api_keys():
         if e.response['Error']['Code'] == 'ResourceNotFoundException':
             # Secrets Manager can't decrypt the protected secret text using the provided KMS key.
             # Deal with the exception here, and/or rethrow at your discretion.
-            logger.info(f"The requested secret {SECRET_NAME} was not found. Creating new secret with an empty list.")
+            logger.debug(f"The requested secret {SECRET_NAME} was not found. Creating new secret with an empty list.")
             secrets_manager_client.create_secret(
                 Name=SECRET_NAME,
                 SecretString=json.dumps([])  # Initialize the secret with an empty list
@@ -134,6 +135,7 @@ def read_root():
 
 @app.post("/v1/complete")
 async def complete(request: Request, api_key: str = Depends(get_api_key)):
+    req_number = random.random()
     body = await request.json()
     if not _is_valid_json_body(body, ["prompt", "max_tokens_to_sample"]):
         logger.error(f'Invalid JSON body: {json.loads(body)}')
@@ -142,8 +144,9 @@ async def complete(request: Request, api_key: str = Depends(get_api_key)):
     model, body_obj, stream_enabled = _process_body(body)
 
     if stream_enabled:
+        response = await run_in_threadpool(bedrock.invoke_model_with_response_stream, body=body_obj, modelId=model, accept=accept, contentType=contentType)
         # Create a StreamingResponse using the _invoke_model asynchronous generator
-        return StreamingResponse(_invoke_model_stream(body_obj, model), media_type="text/event-stream")
+        return StreamingResponse(_invoke_model_stream(response, model, req_number), media_type="text/event-stream")
     else:
         response = _invoke_model(body_obj, model)
         return PlainTextResponse(response)
@@ -151,6 +154,8 @@ async def complete(request: Request, api_key: str = Depends(get_api_key)):
 
 @app.post("/v1/messages")
 async def complete(request: Request, api_key: str = Depends(get_api_key)):
+    req_number = random.random()
+    logger.debug(f"processing req: {req_number=}")
     body = await request.json()
     if not _is_valid_json_body(body, ["model", "messages", "max_tokens"]):
         logger.error(f'Invalid JSON body: {json.loads(body)}')
@@ -159,8 +164,10 @@ async def complete(request: Request, api_key: str = Depends(get_api_key)):
     model, body_obj, stream_enabled = _process_body(body)
 
     if stream_enabled:
+        response = await run_in_threadpool(bedrock.invoke_model_with_response_stream, body=body_obj, modelId=model, accept=accept, contentType=contentType)
         # Create a StreamingResponse using the _invoke_model asynchronous generator
-        return StreamingResponse(_invoke_model_stream(body_obj, model), media_type="text/event-stream")
+        logger.debug(f"Before returning stream response for req {req_number=}")
+        return StreamingResponse(_invoke_model_stream(response, model, req_number), media_type="text/event-stream")
     else:
         response = _invoke_model(body_obj, model)
         return PlainTextResponse(response)
@@ -177,12 +184,13 @@ def _process_body(body_obj):
 
     return bedrock_model, json.dumps(body_obj), stream_enabled
 
-async def _invoke_model_stream(body: dict, model):
-    response = bedrock.invoke_model_with_response_stream(body=body, modelId=model, accept=accept, contentType=contentType)
+async def _invoke_model_stream(response, model, req_number):
     for event in response.get('body'):
         chunk = json.loads(event["chunk"]["bytes"])
         event_type = chunk.get("type", "completion")
+        logger.debug(f"yielding result for request {req_number}")
         yield f'event: {event_type}\ndata:{json.dumps(chunk)}\n\n'
+        await asyncio.sleep(0)
 
 def _invoke_model(body, model):
     response = bedrock.invoke_model(body=body, modelId=model, accept=accept, contentType=contentType)
